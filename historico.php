@@ -1,6 +1,16 @@
 <?php
 require_once 'conexao.php';
 define('UPLOAD_DIR', __DIR__ . '/uploads/');
+define('SCREENSHOT_DIR', __DIR__ . '/screenshots/');
+
+$file = basename($_GET['file'] ?? ''); // Prevenir directory traversal
+$filePath = UPLOAD_DIR . $file;
+
+// Verificar se o arquivo existe e está no diretório permitido
+// if (!file_exists($filePath) || !is_file($filePath)) {
+//     header('HTTP/1.0 404 Not Found');
+//     die('Arquivo não encontrado');
+// }
 
 $processo_id = $_GET['processo'] ?? null;
 
@@ -25,135 +35,137 @@ $error = '';
 
 // Processar formulário se enviado
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    try {
-        $pdo->beginTransaction();
-        
-        // Salvar histórico
-        if (!empty($_POST['texto_historico'])) {
-            $stmt_historico = $pdo->prepare("INSERT INTO historico_processos (processo_id, texto_historico) VALUES (?, ?)");
-            $stmt_historico->execute([$processo_id, $_POST['texto_historico']]);
-        }
-        
-        // Salvar documentos
-        if (!empty($_POST['texto_documentos'])) {
-            $stmt_documentos = $pdo->prepare("INSERT INTO documentos_processos (processo_id, descricao) VALUES (?, ?)");
-            $stmt_documentos->execute([$processo_id, $_POST['texto_documentos']]);
-            
-            // Processar upload de documentos
-            if (!empty($_FILES['documentos']['name'][0])) {
-                processarUploads($pdo, 'documentos', $processo_id, 'documentos_processos');
-            }
-        }
-        if (!empty($_POST['texto_averbacoes'])) {
-            try {
-                // Verificar se a coluna existe
-                $stmt_check = $pdo->prepare("SHOW COLUMNS FROM averbacoes_processos LIKE 'texto_averbacao'");
-                $stmt_check->execute();
-                $column_exists = $stmt_check->fetch();
-                
-                if ($column_exists) {
-                    $stmt_averbacoes = $pdo->prepare("INSERT INTO averbacoes_processos (processo_id, texto_averbacao) VALUES (?, ?)");
-                    $stmt_averbacoes->execute([$processo_id, $_POST['texto_averbacoes']]);
-                } else {
-                    // Se a coluna não existir, inserir sem ela ou criar a coluna
-                    $pdo->exec("ALTER TABLE averbacoes_processos ADD COLUMN texto_averbacao TEXT AFTER processo_id");
-                    $stmt_averbacoes = $pdo->prepare("INSERT INTO averbacoes_processos (processo_id, texto_averbacao) VALUES (?, ?)");
-                    $stmt_averbacoes->execute([$processo_id, $_POST['texto_averbacoes']]);
-                }
-                
-                // Processar upload de documentos de averbação
-                if (!empty($_FILES['averbacoes']['name'][0])) {
-                    processarUploads($pdo, 'averbacoes', $processo_id, 'averbacoes_processos');
-                }
-            } catch (Exception $e) {
-                throw new Exception("Erro ao processar averbações: " . $e->getMessage());
-            }
-}
-        
-         // Processar imagem colada
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['image_data'])) {
-    try {
-        $imageData = $_POST['image_data'];
-        $description = $_POST['image_description'] ?? '';
-        
-        // Processar a imagem
-        $imageData = str_replace('data:image/png;base64,', '', $imageData);
-        $imageData = str_replace(' ', '+', $imageData);
-        $decodedData = base64_decode($imageData);
-        
-        // Gerar nome único
-        $fileName = 'location_' . $processo_id . '_' . time() . '.png';
-        $filePath = 'uploads/' . $fileName;
-        
-        // Salvar arquivo
-        if (file_put_contents($filePath, $decodedData)) {
-            $stmt = $pdo->prepare("INSERT INTO localizacao_processos 
-                                 (processo_id, caminho_imagem, descricao) 
-                                 VALUES (?, ?, ?)");
-            $stmt->execute([$processo_id, $fileName, $description]);
-        }
-    } catch (Exception $e) {
-        // Tratar erro
+
+    $pdo->beginTransaction();
+
+    // Salvar histórico
+    if (!empty($_POST['texto_historico'])) {
+        $stmt_historico = $pdo->prepare("INSERT INTO historico_processos (processo_id, texto_historico) VALUES (?, ?)");
+        $stmt_historico->execute([$processo_id, $_POST['texto_historico']]);
     }
-}
-        
-        // Salvar averbações
-        if (!empty($_POST['texto_averbacoes'])) {
-            $stmt_averbacoes = $pdo->prepare("INSERT INTO averbacoes_processos (processo_id, texto_averbacao) VALUES (?, ?)");
-            $stmt_averbacoes->execute([$processo_id, $_POST['texto_averbacoes']]);
-            
+
+    // Salvar documentos
+    if (!empty($_POST['texto_documentos'])) {
+        $stmt_documentos = $pdo->prepare("INSERT INTO documentos_processos (processo_id, descricao) VALUES (?, ?)");
+        $stmt_documentos->execute([$processo_id, $_POST['texto_documentos']]);
+
+        // Processar upload de documentos
+        if (!empty($_FILES['documentos']['name'][0])) {
+            processarUploads($pdo, 'documentos', $processo_id, 'documentos_processos');
+        }
+    }
+    if (!empty($_POST['texto_averbacoes'])) {
+        try {
+            // Verificar se a coluna existe
+            $stmt_check = $pdo->prepare("SHOW COLUMNS FROM averbacoes_processos LIKE 'texto_averbacao'");
+            $stmt_check->execute();
+            $column_exists = $stmt_check->fetch();
+
+            if ($column_exists) {
+                $stmt_averbacoes = $pdo->prepare("INSERT INTO averbacoes_processos (processo_id, texto_averbacao) VALUES (?, ?)");
+                $stmt_averbacoes->execute([$processo_id, $_POST['texto_averbacoes']]);
+            } else {
+                // Se a coluna não existir, inserir sem ela ou criar a coluna
+                $pdo->exec("ALTER TABLE averbacoes_processos ADD COLUMN texto_averbacao TEXT AFTER processo_id");
+                $stmt_averbacoes = $pdo->prepare("INSERT INTO averbacoes_processos (processo_id, texto_averbacao) VALUES (?, ?)");
+                $stmt_averbacoes->execute([$processo_id, $_POST['texto_averbacoes']]);
+            }
+
             // Processar upload de documentos de averbação
             if (!empty($_FILES['averbacoes']['name'][0])) {
                 processarUploads($pdo, 'averbacoes', $processo_id, 'averbacoes_processos');
             }
+        } catch (Exception $e) {
+            throw new Exception("Erro ao processar averbações: " . $e->getMessage());
         }
-        
-        // Salvar RGI
-        if (!empty($_POST['texto_rgi'])) {
-            $stmt_rgi = $pdo->prepare("INSERT INTO rgi_processos (processo_id, texto_rgi) VALUES (?, ?)");
-            $stmt_rgi->execute([$processo_id, $_POST['texto_rgi']]);
-            
-            // Processar upload de documentos de RGI
-            if (!empty($_FILES['rgi']['name'][0])) {
-                processarUploads($pdo, 'rgi', $processo_id, 'rgi_processos');
+    }
+
+
+    if (isset($_POST['screenshot1']) || isset($_POST['screenshot2'])) {
+
+        //DIRETÓRIO PARA SCREESHOTS
+        if (!file_exists(SCREENSHOT_DIR)) {
+            mkdir(SCREENSHOT_DIR, 0777, true);
+        }
+
+        // Processar imagem colada
+        if (isset($_POST['screenshot1'])) {
+            $imgData = $_POST['screenshot1'];
+            $imgData = str_replace('data:image/png;base64,', '', $imgData);
+            $imgData = str_replace(' ', '+', $imgData);
+            $data = base64_decode($imgData);
+            $file = SCREENSHOT_DIR . uniqid() . '_screenshot1.png';
+            if (file_put_contents($file, $data)) {
+                //PARA ATUALIAZAR O BANCO DE DADOS
+                $sql = "UPDATE localizacao_processos SET screenshot1 = :screenshot1 WHERE processo_id = :processo_id";
+                $stmt = $pdo->prepare($sql);
+                $stmt->bindParam(' :screenshot1', $file);
+                $stmt->bindParam(' :processo_id', $processo_id);
+                $stmt->execute();
             }
         }
-        
-        $pdo->commit();
-        $success = "Dados salvos com sucesso!";
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        $error = "Erro ao salvar dados: " . $e->getMessage();
-    }
-}
 
-// Função para processar uploads de arquivos
-function processarUploads($pdo, $fieldName, $processo_id, $table, $descriptions = []) {
-    foreach ($_FILES[$fieldName]['name'] as $index => $name) {
-        if ($_FILES[$fieldName]['error'][$index] !== UPLOAD_ERR_OK) continue;
-        
-        // Verificar tipo e tamanho do arquivo
-        $fileType = $_FILES[$fieldName]['type'][$index];
-        $fileSize = $_FILES[$fieldName]['size'][$index];
-        
-        
-        // Gerar nome único para o arquivo
-        $fileExt = pathinfo($name, PATHINFO_EXTENSION);
-        $fileName = uniqid() . '.' . $fileExt;
-        $filePath = UPLOAD_DIR . $fileName;
-        
-        // Mover arquivo para o diretório de uploads
-        if (!move_uploaded_file($_FILES[$fieldName]['tmp_name'][$index], $filePath)) {
-            throw new Exception("Falha ao mover arquivo: " . $name);
+        if (isset($_POST['screenshot2'])) {
+            $imgData = $_POST['screenshot2'];
+            $imgData = str_replace('data:image/png;base64,', '', $imgData);
+            $imgData = str_replace(' ', '+', $imgData);
+            $data = base64_decode($imgData);
+            $file = SCREENSHOT_DIR . uniqid() . '_screenshot2.png';
+            if (file_put_contents($file, $data)) {
+                //PARA ATUALIAZAR O BANCO DE DADOS
+                $sql = "UPDATE localizacao_processos SET screenshot2 = :screenshot2 WHERE processo_id = :processo_id";
+                $stmt = $pdo->prepare($sql);
+                $stmt->bindParam(':screenshot2', $file);
+                $stmt->bindParam(':processo_id', $processo_id);
+                $stmt->execute();
+            }
         }
-        
-        // Inserir no banco de dados
-        $descricao = $descriptions[$index] ?? '';
-        $stmt = $pdo->prepare("INSERT INTO $table (processo_id, caminho_".($fieldName === 'fotos' ? 'imagem' : 'arquivo').", descricao) VALUES (?, ?, ?)");
-        $stmt->execute([$processo_id, $fileName, $descricao]);
     }
 
+    // Salvar RGI
+    if (!empty($_POST['texto_rgi'])) {
+        $stmt_rgi = $pdo->prepare("INSERT INTO rgi_processos (processo_id, texto_rgi) VALUES (?, ?)");
+        $stmt_rgi->execute([$processo_id, $_POST['texto_rgi']]);
+
+        // Processar upload de documentos de RGI
+        if (!empty($_FILES['rgi']['name'][0])) {
+            processarUploads($pdo, 'rgi', $processo_id, 'rgi_processos');
+        }
+    }
+
+    $pdo->commit();
+    $success = "Dados salvos com sucesso!";
+
 }
+
+    // Função para processar uploads de arquivos
+function processarUploads($pdo, $fieldName, $processo_id, $table, $descriptions = [])
+{
+        foreach ($_FILES[$fieldName]['name'] as $index => $name) {
+            if ($_FILES[$fieldName]['error'][$index] !== UPLOAD_ERR_OK) continue;
+
+            // Verificar tipo e tamanho do arquivo
+            $fileType = $_FILES[$fieldName]['type'][$index];
+            $fileSize = $_FILES[$fieldName]['size'][$index];
+
+
+            // Gerar nome único para o arquivo
+            $fileExt = pathinfo($name, PATHINFO_EXTENSION);
+            $fileName = uniqid() . '.' . $fileExt;
+            $filePath = UPLOAD_DIR . $fileName;
+
+            // Mover arquivo para o diretório de uploads
+            if (!move_uploaded_file($_FILES[$fieldName]['tmp_name'][$index], $filePath)) {
+                throw new Exception("Falha ao mover arquivo: " . $name);
+            }
+
+            // Inserir no banco de dados
+            $descricao = $descriptions[$index] ?? '';
+            $stmt = $pdo->prepare("INSERT INTO $table (processo_id, caminho_" . ($fieldName === 'fotos' ? 'imagem' : 'arquivo') . ", descricao) VALUES (?, ?, ?)");
+            $stmt->execute([$processo_id, $fileName, $descricao]);
+        }
+}
+
 
 
 // Carregar dados existentes
@@ -225,7 +237,7 @@ $rgi_data = $rgi->fetchAll();
 
         <section id="historico" class="historico-section">
             <h2>Histórico</h2>
-            <textarea name="texto_historico" class="historico-text" placeholder="Insira o histórico deste processo..."></textarea>
+            <textarea name="texto_historico" class="text-area" placeholder="Insira o histórico deste processo..."></textarea>
             
             <?php if (!empty($historico_data)): ?>
                 <div class="historico-list">
@@ -243,7 +255,7 @@ $rgi_data = $rgi->fetchAll();
 
         <section id="documentos" class="historico-section">
             <h2>Documentos</h2>
-            <textarea name="texto_documentos" class="documentos-text" placeholder="Descrição dos documentos..."></textarea>
+            <textarea name="texto_documentos" class="text-area" placeholder="Descrição dos documentos..."></textarea>
             
             <div class="file-upload-container">
                 <label for="documentos">Documentos anexos</label>
@@ -267,116 +279,52 @@ $rgi_data = $rgi->fetchAll();
                 </div>
             <?php endif; ?>
         </section>
+
         <!-- IMAGENS LOCALIZAÇÃO -->
+
         <section id="localizacao" class="historico-section-maps"> 
             
-            <div class="box-maps">
+            <!--MAPS-->
+            <div class="box-image">
 
                 <h2>Localização Google Maps</h2>
-
-                <div class="paste-container"" id=" pasteArea">
-                    <div class="screenshot_maps">
-                        <p>Cole (<kbd>Ctrl+V</kbd>) a imagem do Google Maps aqui</p>
-                    </div>
-                    <div id="imagePreview">
-                        <img id="previewImage" src="" alt="Preview Google Maps">
-                    </div>
-                    <input type="hidden" name="image_data_earth" id="imageDataEarth">
-
-                </div>
-                <!-- Exibir imagens salvas do tipo 'maps' -->
-                
-                    <?php if (!empty($localizacao_imagens_data)): ?>
-                        <div class="localizacao-list">
-                            <h3>Imagens Maps Salvas</h3>
-                            <div id="screenshot1-area" class="screenshot-area">
-                                <?php if (!empty($processo['screenshot1'])): ?>
-                                    <img src="<?= htmlspecialchars($processo['screenshot1']) ?>" alt="Google maps" style="max-width: 100%;">
-                                    <input type="hidden" name="screenshot1" value="<?= htmlspecialchars($processo['screenshot1']) ?>">
-                                <?php else: ?>
-                                    <p>Arraste e solte uma imagem aqui ou use o botão abaixo.</p>
-                                <?php endif; ?>
-                            </div>
-                            <button type="button" class="btn btn-colar" data-target="screenshot1-area">Colar Maps</button>
-                        </div>
+                <div id="screenshot-maps" class="screenshot-area">
+                    <?php if(!empty($processo['screenshot1'])): ?>
+                        <img src="<?= htmlspecialchars($processo['screenshot1']) ?>" alt="Google Maps" style="max-width: 100%">
+                        <input type="hidden" name="screenshot1" value=" <?= htmlspecialchars($processo['screenshot1']) ?>">
+                    <?php else: ?>
+                        <p>Solte a imagem aqui ou clique no botão abaixo</p>
                     <?php endif; ?>
                 </div>
+                <button type="button" class="btn-colar" data-target="screenshot-maps">Colar Maps</button>
             </div>
-            
-
-            <!-- <div class="box-maps">
-                <h2>Localização Google Maps</h2>
-                <div class="paste-container" id="pasteArea">
-                    <div id="pasteInstructions">
-                        <p>📋 Pressione <kbd>PrintScreen</kbd> e depois <kbd>Ctrl+V</kbd> aqui</p>
-                    </div>
-                    <div id="imagePreview">
-                        <img id="previewImage" src="" alt="Pré-visualização">
-                        <button onclick="clearImage()">Remover</button>
-                        <input type="hidden" name="image_data" id="imageData">
-                    </div>
-                </div>
-            </div>  -->
 
             <!-- EARTH -->
-            <div class="box-earth">
+            <div class="box-image">
 
                 <h2>Localização Google Earth</h2>
-
-                <div class="paste-container" id="pasteArea2">
-                    <div id="screenshot_earth">
-                        <p>Cole (<kbd>Ctrl+V</kbd>) a imagem do Google Earth aqui</p>
-                    </div>
-                    <div id="imagePreview2">
-                        <img id="previewImage2" src="" alt="Preview Google Earth">
-                    </div>
-                    <input type="hidden" name="image_data_earth" id="imageDataEarth">
-                   
+                <div id="screenshot-earth" class="screenshot-area">
+                    <?php if(!empty($processo['screenshot2'])): ?>
+                        <img src="<?= htmlspecialchars($processo['screenshot2']) ?>" alt="Google Earth" style="max-width: 100%">
+                        <input type="hidden" name="screenshot2" value="<?= htmlspecialchars($processo['screenshot2']) ?>">
+                    <?php else: ?>
+                        <p>Solte a imagem aqui ou clique no botão abaixo</p>
+                    <?php endif; ?>
                 </div>
-                <!-- Exibir imagens salvas do tipo 'earth' -->
-                <?php if (!empty($localizacao_imagens_data)): ?>
-                    <div class="localizacao-list">
-                        <h3>Imagens Earth Salvas</h3>
-                        <div id="screenshot2-area" class="screenshot-area">
-                            <div id="screenshot2-area" class="screenshot-area">
-                                <?php if (!empty($processo['screenshot2'])): ?>
-                                    <img src="<?= htmlspecialchars($processo['screenshot2']) ?>" alt="Google Earth" style="max-width: 100%;">
-                                    <input type="hidden" name="screenshot2" value="<?= htmlspecialchars($processo['screenshot2']) ?>">
-                                <?php else: ?>
-                                    <p>Arraste e solte uma imagem aqui ou use o botão abaixo.</p>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                        <button type="button" class="btn btn-colar" data-target="screenshot2-area">Colar Earth</button>
-                    </div>
-                    
-                <?php endif; ?>
+                <button type="button" class="btn-colar" data-target="screenshot-earth">Colar Earth</button>
+
             </div>
-            <textarea name="image_description_earth" placeholder="Descrição da imagem do Earth..."></textarea>
-            <textarea name="image_description_earth" placeholder="Descrição da imagem do Earth..."></textarea>
+            <textarea class="text-area" name="image_description_maps" placeholder="Descrição da imagem do Maps.."></textarea>
+            <textarea class="text-area" name="image_description_earth" placeholder="Descrição da imagem do Earth..."></textarea>
             <button type="button" class="button" onclick="clearLocationPreviews()">Remover Prints</button>
 
-            <!-- <div class="box-earth">
-                <h2>Localização Google Earth</h2>
-                <div class="paste-container" id="pasteArea2">
-                    <div id="pasteInstructions">
-                        <p>📋 Pressione <kbd>PrintScreen</kbd> e depois <kbd>Ctrl+V</kbd> aqui</p>
-                    </div>
-                    <div id="imagePreview2">
-                        <img id="previewImage2" src="" alt="Pré-visualização">
-                        <button onclick="clearImage()">Remover</button>
-                        <input type="hidden" name="image_data" id="imageData">
-                    </div>
-                </div> 
-            </div> -->
-            
         </section>
 
         <!-- Averbações -->
 
         <section id="averbacoes" class="historico-section">
             <h2>Averbações</h2>
-            <textarea name="texto_averbacoes" class="averbacoes-text" placeholder="Descrição das averbações..."></textarea>
+            <textarea name="texto_averbacoes" class="text-area" placeholder="Descrição das averbações..."></textarea>
 
             <div class="file-upload-container">
                 <label for="averbacoes">Documentos Averbados:</label>
@@ -405,7 +353,7 @@ $rgi_data = $rgi->fetchAll();
 
         <section id="rgi" class="historico-section">
             <h2>RGI</h2>
-            <textarea name="texto_rgi" class="rgi-text" placeholder="Descrição do RGI..."></textarea>
+            <textarea name="texto_rgi" class="text-area" placeholder="Descrição do RGI..."></textarea>
             
             <div class="file-upload-container">
                 <label for="rgi">RGIs Anexados:</label>
@@ -432,13 +380,13 @@ $rgi_data = $rgi->fetchAll();
         </section>
 
         <div class="form-actions">
-            <button type="submit" class="save-btn">Salvar Todas as Alterações</button>
+            <button type="submit" class="save-btn">Salvar</button>
         </div>
     </form>
 
     <a href="#" class="back-to-top">Retornar ao Topo</a>
 
     <script src="./assets/script.js"></script>
-    <script src="./assets/script_loc.js"></script>
+    <!-- <script src="./assets/script_loc.js"></script> -->
 </body>
 </html>
